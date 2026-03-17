@@ -348,6 +348,54 @@
   details.panel-section:not([open]) .hints-toggle-icon { transform: rotate(180deg); }
   .hints-toggle-icon { transition: transform 0.2s; font-size: 10px; color: #4a6a8a; }
 
+  /* ── 自訂色盤 ── */
+  .color-picker-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .color-swatches {
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    gap: 4px;
+  }
+  .color-swatch {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 3px;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: transform 0.1s, border-color 0.1s;
+  }
+  .color-swatch:hover  { transform: scale(1.2); }
+  .color-swatch.active { border-color: #fff; transform: scale(1.15); }
+  .color-hex-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .color-preview {
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    border: 1px solid #2a3a5c;
+    flex-shrink: 0;
+    background: #4fc3f7;
+  }
+  .color-hex-input {
+    flex: 1;
+    background: #0d1526;
+    border: 1px solid #2a3a5c;
+    color: #e0e8ff;
+    padding: 5px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: 'Courier New', monospace;
+    outline: none;
+    text-transform: uppercase;
+  }
+  .color-hex-input:focus { border-color: #4fc3f7; }
+
   .hints {
     font-size: 11px;
     color: #4a6a8a;
@@ -377,7 +425,7 @@
   #tv-outer {
     position: relative;
     width: 100%;
-    padding-bottom: calc(75% + 30px); /* 4:3 外框比例 */
+    padding-bottom: calc(75% + 30px); /* 預設 4:3，由 JS 動態覆蓋 */
   }
   #tv-outer-img {
     position: absolute;
@@ -717,7 +765,43 @@
         <button class="btn btn-danger" onclick="clearFrame()" data-i18n-btn="use_default">還原預設</button>
       </div>
       <input type="file" id="frame-input" style="display:none" accept="image/*,video/mp4,video/webm" onchange="loadFrame(this)">
-      <div style="font-size:10px;color:#4a6a8a;margin-top:4px" data-i18n="frame_hint">建議使用 PNG 透明外框圖，可做成任意電視外型</div>
+      <div style="font-size:10px;color:#4a6a8a;margin-top:4px" data-i18n="frame_hint">支援 PNG / APNG / GIF / MP4 透明外框素材</div>
+
+      <label>外框比例</label>
+      <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+        <input type="number" id="outer-ratio-w" value="4" min="0.1" max="32" step="0.1"
+               style="width:54px" oninput="updateOuterRatio()">
+        <span style="color:#4a6a8a;font-size:14px">:</span>
+        <input type="number" id="outer-ratio-h" value="3" min="0.1" max="32" step="0.1"
+               style="width:54px" oninput="updateOuterRatio()">
+        <button class="btn" onclick="setOuterRatio(4,3)">4:3</button>
+        <button class="btn" onclick="setOuterRatio(16,9)">16:9</button>
+        <button class="btn" onclick="setOuterRatio(9,16)">9:16</button>
+        <button class="btn" onclick="setOuterRatio(1,1)">1:1</button>
+      </div>
+
+      <label>外框疊加模式</label>
+      <details class="custom-select" id="frame-overlay-select" data-value="off" data-onchange="applyFrameOverlay">
+        <summary class="custom-select-selected">關閉</summary>
+        <div class="custom-select-options">
+          <div class="custom-select-option selected" data-value="off">關閉（外框在內容下方）</div>
+          <div class="custom-select-option" data-value="on">開啟（外框疊加在內容上方）</div>
+        </div>
+      </details>
+      <div id="blend-mode-row" style="display:none">
+        <label style="margin-top:6px">疊加混合模式</label>
+        <details class="custom-select" id="frame-blend-select" data-value="multiply" data-onchange="applyFrameOverlay">
+          <summary class="custom-select-selected">Multiply（正片疊底）</summary>
+          <div class="custom-select-options">
+            <div class="custom-select-option selected" data-value="multiply">Multiply（正片疊底）</div>
+            <div class="custom-select-option" data-value="screen">Screen（濾色）</div>
+            <div class="custom-select-option" data-value="overlay">Overlay（疊加）</div>
+            <div class="custom-select-option" data-value="soft-light">Soft Light（柔光）</div>
+            <div class="custom-select-option" data-value="hard-light">Hard Light（實光）</div>
+            <div class="custom-select-option" data-value="luminosity">Luminosity（明度）</div>
+          </div>
+        </details>
+      </div>
 
       <label data-i18n="inner_pos_label">內容區域位置偏移（%）</label>
       <div class="row">
@@ -754,7 +838,16 @@
       </details>
 
       <label data-i18n="border_color_label">內框顏色</label>
-      <input type="color" id="border-color" value="#4fc3f7" onchange="updateBorderColor()" style="width:100%;height:32px;padding:2px;border:1px solid #2a3a5c;background:#0d1526;border-radius:4px;cursor:pointer;">
+      <div class="color-picker-wrap">
+        <div class="color-swatches" id="color-swatches"></div>
+        <div class="color-hex-row">
+          <div class="color-preview" id="color-preview"></div>
+          <input class="color-hex-input" id="border-color" type="text" value="#4FC3F7"
+                 maxlength="7" placeholder="#RRGGBB"
+                 oninput="onColorHexInput(this.value)"
+                 onblur="onColorHexCommit(this.value)">
+        </div>
+      </div>
     </div>
 
     <!-- OBS 使用說明（可收合）-->
@@ -987,6 +1080,98 @@ function applyI18n() {
 }
 
 // ══════════════════════════════════════════
+//  IndexedDB 檔案持久化
+// ══════════════════════════════════════════
+const IDB_NAME = 'obstv-files';
+const IDB_VER  = 1;
+let _idb = null;
+
+function getIDB() {
+  if (_idb) return Promise.resolve(_idb);
+  return new Promise((res, rej) => {
+    const r = indexedDB.open(IDB_NAME, IDB_VER);
+    r.onupgradeneeded = e => e.target.result.createObjectStore('files', { keyPath: 'k' });
+    r.onsuccess = e => { _idb = e.target.result; res(_idb); };
+    r.onerror = rej;
+  });
+}
+async function idbPut(key, blob, meta = {}) {
+  const db = await getIDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction('files', 'readwrite');
+    tx.objectStore('files').put({ k: key, blob, ...meta });
+    tx.oncomplete = res; tx.onerror = rej;
+  });
+}
+async function idbGet(key) {
+  const db = await getIDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction('files', 'readonly');
+    const r = tx.objectStore('files').get(key);
+    r.onsuccess = e => res(e.target.result); r.onerror = rej;
+  });
+}
+async function idbDel(key) {
+  const db = await getIDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction('files', 'readwrite');
+    tx.objectStore('files').delete(key);
+    tx.oncomplete = res; tx.onerror = rej;
+  });
+}
+async function idbGetAll() {
+  const db = await getIDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction('files', 'readonly');
+    const r = tx.objectStore('files').getAll();
+    r.onsuccess = e => res(e.target.result); r.onerror = rej;
+  });
+}
+
+// 儲存 media 排序到 localStorage
+function saveMediaOrder() {
+  const order = mediaList.map(m => m.dbKey);
+  try { localStorage.setItem('obstv-media-order', JSON.stringify(order)); } catch(e) {}
+}
+
+// 啟動時從 IndexedDB 還原所有素材
+async function restoreFromDB() {
+  // 還原外框
+  const frameRec = await idbGet('frame');
+  if (frameRec) {
+    const url = URL.createObjectURL(frameRec.blob);
+    const isVideo = frameRec.mimeType?.startsWith('video/');
+    if (isVideo) {
+      const v = document.getElementById('tv-outer-video');
+      v.src = url; v.style.display = ''; v.play();
+    } else {
+      const img = document.getElementById('tv-outer-img');
+      img.src = url; img.style.display = '';
+    }
+    document.getElementById('tv-outer-canvas').style.display = 'none';
+  }
+
+  // 還原媒體清單
+  const all = await idbGetAll();
+  const mediaRecs = all.filter(r => r.k !== 'frame');
+  if (mediaRecs.length === 0) return;
+  let order = [];
+  try { order = JSON.parse(localStorage.getItem('obstv-media-order') || '[]'); } catch(e) {}
+  // 依儲存順序排列
+  mediaRecs.sort((a, b) => {
+    const ia = order.indexOf(a.k), ib = order.indexOf(b.k);
+    return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+  });
+  const dur = parseInt(document.getElementById('img-duration').value) || 5;
+  for (const rec of mediaRecs) {
+    const url = URL.createObjectURL(rec.blob);
+    mediaList.push({ name: rec.name, type: rec.mimeType?.startsWith('video/') ? 'video' : 'image', url, duration: rec.duration ?? dur, dbKey: rec.k });
+  }
+  renderMediaList();
+  if (mediaList.length > 0) showMedia(0, false);
+}
+
+// ══════════════════════════════════════════
 //  媒體管理
 // ══════════════════════════════════════════
 let mediaList = []; // { name, type:'video'|'image', url, duration(image only) }
@@ -998,19 +1183,18 @@ let activeLayer = 'a';
 let isTransitioning = false;
 
 function handleFiles(files) {
+  const wasEmpty = mediaList.length === 0;
   for (const f of files) {
     const url = URL.createObjectURL(f);
     const isVideo = f.type.startsWith('video/');
-    mediaList.push({
-      name: f.name,
-      type: isVideo ? 'video' : 'image',
-      url,
-      duration: parseInt(document.getElementById('img-duration').value) || 5,
-      file: f
-    });
+    const dur = parseInt(document.getElementById('img-duration').value) || 5;
+    const dbKey = `media_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    mediaList.push({ name: f.name, type: isVideo ? 'video' : 'image', url, duration: dur, dbKey });
+    idbPut(dbKey, f, { name: f.name, mimeType: f.type, duration: dur });
   }
+  saveMediaOrder();
   renderMediaList();
-  if (isPlaying && mediaList.length === 1) showMedia(0, false);
+  if (isPlaying && wasEmpty && mediaList.length > 0) showMedia(0, false);
 }
 
 function renderMediaList() {
@@ -1042,12 +1226,16 @@ function moveItem(i, dir) {
   const j = i + dir;
   if (j < 0 || j >= mediaList.length) return;
   [mediaList[i], mediaList[j]] = [mediaList[j], mediaList[i]];
+  saveMediaOrder();
   renderMediaList();
 }
 function removeItem(i) {
-  URL.revokeObjectURL(mediaList[i].url);
+  const item = mediaList[i];
+  URL.revokeObjectURL(item.url);
+  if (item.dbKey) idbDel(item.dbKey);
   mediaList.splice(i, 1);
   if (currentIndex >= mediaList.length) currentIndex = Math.max(0, mediaList.length - 1);
+  saveMediaOrder();
   renderMediaList();
 }
 
@@ -1216,8 +1404,73 @@ function toggleHud() {
   saveSettings();
 }
 
+// ── 自訂色盤 ──────────────────────────────
+const COLOR_SWATCHES = [
+  '#4fc3f7','#81d4fa','#29b6f6','#0288d1','#0d47a1',
+  '#7c4dff','#e040fb','#f06292','#ef5350','#ff7043',
+  '#ffa726','#ffee58','#d4e157','#66bb6a','#26a69a',
+  '#ffffff','#b0bec5','#78909c','#455a64','#000000',
+];
+
+function initColorPicker() {
+  const wrap = document.getElementById('color-swatches');
+  const currentHex = document.getElementById('border-color').value.toUpperCase();
+  wrap.innerHTML = COLOR_SWATCHES.map(c =>
+    `<div class="color-swatch${c.toUpperCase() === currentHex ? ' active' : ''}"
+          style="background:${c}"
+          onclick="pickColor('${c}')"></div>`
+  ).join('');
+  syncColorPreview(currentHex);
+}
+
+function pickColor(hex) {
+  document.getElementById('border-color').value = hex.toUpperCase();
+  syncColorPreview(hex);
+  highlightActiveSwatch(hex);
+  updateBorderColor();
+}
+
+function onColorHexInput(val) {
+  if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+    syncColorPreview(val);
+    highlightActiveSwatch(val);
+  }
+}
+
+function onColorHexCommit(val) {
+  const clean = val.trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(clean)) {
+    updateBorderColor();
+  } else {
+    // 還原為上一個有效值
+    const last = document.getElementById('color-preview').style.background;
+    document.getElementById('border-color').value = last || '#4FC3F7';
+  }
+}
+
+function syncColorPreview(hex) {
+  document.getElementById('color-preview').style.background = hex;
+}
+
+function highlightActiveSwatch(hex) {
+  const upper = hex.toUpperCase();
+  document.querySelectorAll('.color-swatch').forEach(s => {
+    s.classList.toggle('active', s.style.background.replace(/\s/g,'').toUpperCase() === upper ||
+      rgbToHex(s.style.background).toUpperCase() === upper);
+  });
+}
+
+function rgbToHex(rgb) {
+  const m = rgb.match(/\d+/g);
+  if (!m || m.length < 3) return '';
+  return '#' + m.slice(0,3).map(n => parseInt(n).toString(16).padStart(2,'0')).join('');
+}
+
 function updateBorderColor() {
   const c = document.getElementById('border-color').value;
+  if (!/^#[0-9a-fA-F]{6}$/.test(c)) return;
+  syncColorPreview(c);
+  highlightActiveSwatch(c);
   const border = document.getElementById('tv-inner-border');
   border.style.borderColor = c + '99';
   border.style.boxShadow = `inset 0 0 12px ${c}33, 0 0 8px ${c}4d`;
@@ -1243,18 +1496,14 @@ function loadFrame(input) {
   const video = document.getElementById('tv-outer-video');
 
   if (isVideo) {
-    img.style.display = 'none';
-    img.src = '';
-    video.src = url;
-    video.style.display = '';
-    video.play();
+    img.style.display = 'none'; img.src = '';
+    video.src = url; video.style.display = ''; video.play();
   } else {
-    video.style.display = 'none';
-    video.src = '';
-    img.src = url;
-    img.style.display = '';
+    video.style.display = 'none'; video.src = '';
+    img.src = url; img.style.display = '';
   }
   document.getElementById('tv-outer-canvas').style.display = 'none';
+  idbPut('frame', file, { name: file.name, mimeType: file.type });
 }
 
 function clearFrame() {
@@ -1263,7 +1512,46 @@ function clearFrame() {
   img.style.display = 'none';   img.src = '';
   video.style.display = 'none'; video.src = '';
   document.getElementById('tv-outer-canvas').style.display = '';
+  idbDel('frame');
   drawDefaultFrame();
+}
+
+function setOuterRatio(w, h) {
+  document.getElementById('outer-ratio-w').value = w;
+  document.getElementById('outer-ratio-h').value = h;
+  updateOuterRatio();
+}
+
+function updateOuterRatio() {
+  const w = parseFloat(document.getElementById('outer-ratio-w').value) || 4;
+  const h = parseFloat(document.getElementById('outer-ratio-h').value) || 3;
+  const pct = (h / w * 100).toFixed(4);
+  document.getElementById('tv-outer').style.paddingBottom = `calc(${pct}% + 30px)`;
+  setTimeout(drawDefaultFrame, 30);
+  saveSettings();
+}
+
+function applyFrameOverlay() {
+  const isOn    = getSelectValue('frame-overlay-select') === 'on';
+  const blend   = getSelectValue('frame-blend-select') || 'multiply';
+  const img     = document.getElementById('tv-outer-img');
+  const video   = document.getElementById('tv-outer-video');
+  const blendRow = document.getElementById('blend-mode-row');
+
+  // 疊加模式：外框 z-index 高於 #tv-inner（z:4）
+  const zi = isOn ? '10' : '2';
+  const bm = isOn ? blend : 'normal';
+
+  [img, video].forEach(el => {
+    el.style.zIndex       = zi;
+    el.style.mixBlendMode = bm;
+  });
+
+  // canvas（預設外框）不需要混合，只調整層級
+  document.getElementById('tv-outer-canvas').style.zIndex = isOn ? '9' : '1';
+
+  blendRow.style.display = isOn ? '' : 'none';
+  saveSettings();
 }
 
 // ══════════════════════════════════════════
@@ -1514,6 +1802,10 @@ function saveSettings() {
     innerWidth:   document.getElementById('inner-width').value,
     borderColor:  document.getElementById('border-color').value,
     lang:         currentLang,
+    outerRatioW:    document.getElementById('outer-ratio-w').value,
+    outerRatioH:    document.getElementById('outer-ratio-h').value,
+    frameOverlay:   getSelectValue('frame-overlay-select'),
+    frameBlend:     getSelectValue('frame-blend-select'),
     infoBarHidden: document.getElementById('tv-info-bar').style.display === 'none',
     transition:   getSelectValue('transition-select'),
     scale:        getSelectValue('scale-select'),
@@ -1542,6 +1834,11 @@ function loadSettings() {
   if (!s) return;
   const set = (id, v) => { if (v != null) { const el = document.getElementById(id); if (el) el.value = v; } };
   if (s.widgetWidth) syncWidgetSize(s.widgetWidth);
+  if (s.outerRatioW || s.outerRatioH) {
+    if (s.outerRatioW) document.getElementById('outer-ratio-w').value = s.outerRatioW;
+    if (s.outerRatioH) document.getElementById('outer-ratio-h').value = s.outerRatioH;
+    updateOuterRatio();
+  }
   if (s.infoBarHidden) toggleInfoBar(true);
   set('img-duration', s.imgDuration);
   set('inner-top',    s.innerTop);
@@ -1553,8 +1850,11 @@ function loadSettings() {
   if (s.scale)      setSelectValue('scale-select',      s.scale);
   if (s.loop)       setSelectValue('loop-select',       s.loop);
   if (s.mute)       setSelectValue('mute-select',       s.mute);
-  if (s.scanlines)  setSelectValue('scanlines-select',  s.scanlines);
-  if (s.hud)        setSelectValue('hud-select',        s.hud);
+  if (s.scanlines)     setSelectValue('scanlines-select',      s.scanlines);
+  if (s.hud)           setSelectValue('hud-select',            s.hud);
+  if (s.frameOverlay)  setSelectValue('frame-overlay-select',  s.frameOverlay);
+  if (s.frameBlend)    setSelectValue('frame-blend-select',    s.frameBlend);
+  applyFrameOverlay();
 }
 
 function getSelectValue(id) {
@@ -1595,7 +1895,11 @@ function initCustomSelects() {
 applyI18n();
 initCustomSelects();
 loadSettings();      // 載入儲存的設定
+updateOuterRatio();  // 初始化外框比例（覆蓋 CSS 預設值）
+applyFrameOverlay(); // 初始化外框疊加模式
+initColorPicker();   // 初始化色盤
 applyAllSettings();
+restoreFromDB();     // 從 IndexedDB 還原素材與外框（async）
 isPlaying = true;
 </script>
 </body>
